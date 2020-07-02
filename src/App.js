@@ -1,5 +1,7 @@
 import React from "react";
 
+const API_ENDPOINT = "https://hn.algolia.com/api/v1/search?query=";
+
 const useSemiPersistentState = (key, initialState) => {
   const [value, setValue] = React.useState(
     localStorage.getItem(key) || initialState
@@ -12,12 +14,24 @@ const useSemiPersistentState = (key, initialState) => {
 
 const storiesReducer = (state, action) => {
   switch (action.type) {
-    case "SET_STORIES":
-      return action.payload;
+    case "STORIES_FETCH_INIT":
+      return { ...state, isLoading: true, isError: false };
+    case "STORIES_FETCH_FAILURE":
+      return { ...state, isLoading: false, isError: true };
+    case "STORIES_FETCH_SUCCESS":
+      return {
+        ...state,
+        isLoading: false,
+        isError: false,
+        data: action.payload,
+      };
     case "REMOVE_STORY":
-      return state.filter(
-        (story) => action.payload.objectID !== story.objectID
-      );
+      return {
+        ...state,
+        data: state.data.filter(
+          (story) => action.payload.objectID !== story.objectID
+        ),
+      };
     default:
       throw new Error();
   }
@@ -43,17 +57,8 @@ const App = () => {
   ];
 
   const getAsyncStories = React.useCallback(
-    () =>
-      new Promise((resolve) =>
-        setTimeout(
-          () =>
-            resolve({
-              data: { stories: initialStories },
-            }),
-          2000
-        )
-      ),
-    [initialStories]
+    () => new Promise((resolve, reject) => setTimeout(() => reject(), 2000)),
+    []
   );
 
   const [searchTerm, setSearchTerm] = useSemiPersistentState("search", "React");
@@ -62,25 +67,27 @@ const App = () => {
     setSearchTerm(event.target.value);
   };
 
-  const [stories, dispatchStories] = React.useReducer(storiesReducer, []);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [isError, setIsError] = React.useState(false);
+  const [stories, dispatchStories] = React.useReducer(storiesReducer, {
+    data: [],
+    isLoading: false,
+    isError: false,
+  });
 
   React.useEffect(() => {
-    getAsyncStories()
+    if (!searchTerm) return;
+
+    dispatchStories({ type: "STORIES_FETCH_INIT" });
+
+    fetch(`${API_ENDPOINT}${searchTerm}`)
+      .then((response) => response.json())
       .then((result) => {
         dispatchStories({
-          type: "SET_STORIES",
-          payload: result.data.stories,
+          type: "STORIES_FETCH_SUCCESS",
+          payload: result.hits,
         });
-        setIsLoading(false);
       })
-      .catch(() => setIsError(true));
-  }, [getAsyncStories]);
-
-  const searchedStories = stories.filter((story) =>
-    story.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      .catch(() => dispatchStories({ type: "STORIES_FETCH_FAILURE" }));
+  }, [searchTerm]);
 
   const handleRemoveStory = (item) => {
     console.log(item);
@@ -104,12 +111,13 @@ const App = () => {
       </InputWithLabel>
       <hr />
 
-      {isError && <p>Something went wrong ...</p>}
-      {console.log(isLoading)}
-      {isLoading ? (
+      {stories.isError && <p>Something went wrong ...</p>}
+      {console.log(`loading: ${stories.isLoading}`)}
+      {console.log(`error: ${stories.isError}`)}
+      {stories.isLoading ? (
         <p>Loading ...</p>
       ) : (
-        <List list={searchedStories} onRemoveItem={handleRemoveStory} />
+        <List list={stories.data} onRemoveItem={handleRemoveStory} />
       )}
     </div>
   );
@@ -158,9 +166,15 @@ const Item = ({ item, onRemoveItem }) => {
       <span>
         <a href={item.url}>{item.title}</a>
       </span>
-      <span>{item.author}</span>
-      <span>{item.num_comments}</span>
-      <span>{item.points}</span>
+      &nbsp;
+      <span>Author: {item.author}</span>
+      &nbsp;
+      <span>Date: {new Date(item.created_at_i * 1000).toLocaleString()}</span>
+      &nbsp;
+      <span>Comments: {item.num_comments}</span>
+      &nbsp;
+      <span>Points: {item.points}</span>
+      &nbsp;
       <span>
         <button type="button" onClick={() => onRemoveItem(item)}>
           Dismiss
