@@ -8,7 +8,7 @@ const useSemiPersistentState = (key, initialState) => {
   );
   React.useEffect(() => {
     localStorage.setItem(key, value);
-  }, [value, key]);
+  }, [key, value]);
   return [value, setValue];
 };
 
@@ -38,34 +38,7 @@ const storiesReducer = (state, action) => {
 };
 
 const App = () => {
-  const initialStories = [
-    {
-      title: "React",
-      url: "https://reactjs.org/",
-      author: "Jordan Walke",
-      num_comments: 3,
-      points: 4,
-      objectID: 0,
-    },
-    {
-      title: "Redux",
-      url: "https://redux.js.org/",
-      author: "Dan Abramov, Andrew Clark",
-      points: 5,
-      objectID: 1,
-    },
-  ];
-
-  const getAsyncStories = React.useCallback(
-    () => new Promise((resolve, reject) => setTimeout(() => reject(), 2000)),
-    []
-  );
-
   const [searchTerm, setSearchTerm] = useSemiPersistentState("search", "React");
-
-  const handleSearch = (event) => {
-    setSearchTerm(event.target.value);
-  };
 
   const [stories, dispatchStories] = React.useReducer(storiesReducer, {
     data: [],
@@ -73,28 +46,36 @@ const App = () => {
     isError: false,
   });
 
+  const handleFetchStories = React.useCallback(() => {
+    
+      if (!searchTerm) return;
+  
+      dispatchStories({ type: "STORIES_FETCH_INIT" });
+  
+      fetch(`${API_ENDPOINT}${searchTerm}`)
+        .then((response) => response.json())
+        .then((result) => {
+          dispatchStories({
+            type: "STORIES_FETCH_SUCCESS",
+            payload: result.hits,
+          });
+        })
+        .catch(() => dispatchStories({ type: "STORIES_FETCH_FAILURE" }));
+    }, [searchTerm]);
+
   React.useEffect(() => {
-    if (!searchTerm) return;
-
-    dispatchStories({ type: "STORIES_FETCH_INIT" });
-
-    fetch(`${API_ENDPOINT}${searchTerm}`)
-      .then((response) => response.json())
-      .then((result) => {
-        dispatchStories({
-          type: "STORIES_FETCH_SUCCESS",
-          payload: result.hits,
-        });
-      })
-      .catch(() => dispatchStories({ type: "STORIES_FETCH_FAILURE" }));
-  }, [searchTerm]);
-
+    handleFetchStories();
+  }, [handleFetchStories]);
+  
   const handleRemoveStory = (item) => {
     console.log(item);
     dispatchStories({
       type: "REMOVE_STORY",
       payload: item,
     });
+  };
+  const handleSearch = (event) => {
+    setSearchTerm(event.target.value);
   };
 
   return (
@@ -104,11 +85,12 @@ const App = () => {
         id="search"
         label="Search"
         value={searchTerm}
-        autoFocus
+        isFocused
         onInputChange={handleSearch}
       >
         <strong>Search:</strong>
       </InputWithLabel>
+      
       <hr />
 
       {stories.isError && <p>Something went wrong ...</p>}
